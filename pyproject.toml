@@ -6,7 +6,6 @@ authors = ["Litchi Pi <litchi.pi@proton.me>"]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-tcp_proxy = { git = "https://github.com/litchipi/tcp_proxy.git", branch = "main" }
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
