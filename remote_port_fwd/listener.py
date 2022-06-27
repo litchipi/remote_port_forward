@@ -102,7 +102,7 @@ class Listener:
             self.rppf_conn.shutdown(socket.SHUT_RDWR)
             self.rppf_conn.close()
 
-            self.rppf_conn, address = rppf_socket.accept()
+            self.rppf_conn, address = self.rppf_socket.accept()
             self.rppf_conn_lock.release()
 
 parser = argparse.ArgumentParser(
