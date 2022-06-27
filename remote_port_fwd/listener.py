@@ -102,21 +102,18 @@ class Listener:
             self.rppf_conn, address = self.rppf_socket.accept()
             self.rppf_conn_lock.release()
 
-parser = argparse.ArgumentParser(
-        formatter_class=argparse.RawTextHelpFormatter, 
-        description="Raw TCP port forwarding listener")
-
-parser.add_argument("tunnel_address",
-        metavar="thost:tport",
-        type=str,
-        help="Tunnel address to listen to")
-
-parser.add_argument("serve_port",
-        type=int,
-        help="The port on which the tunnel serves the data")
-
 if __name__ == "__main__":
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(
+            formatter_class=argparse.RawTextHelpFormatter, 
+            description="Raw TCP port forwarding listener")
 
-    tunnel_hostname, tunnel_port = args.tunnel_address.split(':')
-    Listener((tunnel_hostname, int(tunnel_port)), ("localhost", args.serve_port))
+    parser.add_argument("tunnel_port",
+            type=int,
+            help="The port on which the remote tunnel is connected")
+
+    parser.add_argument("serve_port",
+            type=int,
+            help="The port on which you wish to serve the data received")
+
+    args = parser.parse_args()
+    Listener(("localhost", args.tunnel_port), ("localhost", args.serve_port))

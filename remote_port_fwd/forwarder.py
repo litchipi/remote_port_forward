@@ -136,13 +136,15 @@ if __name__ == "__main__":
             type=int,
             help="Your local port to be contacted")
 
-    parser.add_argument("forward_address",
-            metavar="fhost:fport",
+    parser.add_argument("tunnel_address",
+            metavar="thost:tport",
             type=str,
-            help="The remote address to forward to")
-
+            help="The address in which the tunnel will be connected to")
     args = parser.parse_args()
-    tunnel_address = ("localhost", args.port)
-    forward_hostname, forward_port = args.forward_address.split(':')
-    forward_address = (forward_hostname, int(forward_port))
+
+    tunnel_hostname, tunnel_port = args.tunnel_address.split(':')
+    tunnel_address = (tunnel_hostname, int(tunnel_port))
+
+    forward_address = ("localhost", args.port)
+
     Forwarder(forward_address, tunnel_address)
