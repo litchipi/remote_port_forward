@@ -13,16 +13,13 @@ class Listener:
 
     def __init__(self, tunnel_address, rppf_address):
         try :
-            print("Waiting for incoming tunnel connection...")
+            print("[*] Waiting for incoming tunnel connection...")
             tunnel_socket = self.make_listening_server(tunnel_address)
             self.tunnel_conn, address  = tunnel_socket.accept()
-            print("Tunnel created")
 
-            print("Opening rppf listening service...")
+            print("[*] Opening rppf listening service on {}...".format(rppf_address))
             self.rppf_socket = self.make_listening_server(rppf_address)
-            print("--------------------------------------------")
-            print("RPPF Service opened on " + str(rppf_address))
-            print("Ready to transfer data")
+            print("-------------------- Ready --------------------")
 
             # start thread for incoming and outcoming traffic
             tunnel2rppf_t = threading.Thread(target=self.tunnel2rppf)
@@ -44,18 +41,18 @@ class Listener:
 
         except KeyboardInterrupt :
             # close sockets after SIGINT
-            print('\nClosing connections')
+            print('\n[*] Closing connections')
             tunnel_socket.shutdown(socket.SHUT_RDWR)
             tunnel_socket.close()
             self.rppf_socket.shutdown(socket.SHUT_RDWR)
             self.rppf_socket.close()
-            print('\nStopped correctly')
+            print('\n[*] Stopped correctly')
             sys.exit(0)
 
         except Exception as e :
-            print('An exception occurred')
+            print('[!] An exception occurred')
             print(e)
-            print('Trying to close sockets')
+            print('[!] Trying to close sockets')
             tunnel_socket.shutdown(socket.SHUT_RDWR)
             tunnel_socket.close()
             self.rppf_socket.shutdown(socket.SHUT_RDWR)
@@ -107,7 +104,7 @@ class Listener:
 
 parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter, 
-        description="Raw TCP port forward")
+        description="Raw TCP port forwarding listener")
 
 parser.add_argument("tunnel_address",
         metavar="thost:tport",

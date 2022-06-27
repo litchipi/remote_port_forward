@@ -8,162 +8,141 @@ import sys
 import threading
 import argparse
 
-
-BUFFER_SIZE = 0x400
-
-
-def establish_connection(address):
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-    while True :
-        try :
-            client_socket.connect(address)
-            break
-        except :
-            time.sleep(1)
-
-    return client_socket
-
-
-def renew_socket(old_socket, address) :
-    old_socket.shutdown(socket.SHUT_RDWR)
-    old_socket.close()
-    return establish_connection(address)
-
-
-# tunnel connection should be always alive and so should never launch error
-# if tunnel connection drop you should restart the program
-def tunnel2forward() :
-    global forward_socket
-
-    while True :
-        data = tunnel_socket.recv(BUFFER_SIZE)
-        if not data :
-            raise Exception("Tunnel has dropped, this shouldn't happen, restart RPPF.")
+class Forwarder:
+    BUFFER_SIZE = 0x400
+    
+    def __init__(self, forward_address, tunnel_address):
+        self.forward_address = forward_address
+        self.tunnel_address = tunnel_address
 
         try :
-            sending_socket_lock.acquire()
-            forward_socket.sendall(data)
-            sending_socket_lock.release()
+            print("[*] Creating tunnel to " + str(tunnel_address))
+            self.tunnel_socket = self.establish_connection(self.tunnel_address)
 
-        except Exception :
-            sending_socket_lock.release()
+            print("[*] Opening forward connection to " + str(self.forward_address))
+            self.forward_socket = self.establish_connection(self.forward_address)
+            print("-------------------- Ready --------------------")
+            
 
-            # locking other threads
-            receiving_socket_lock.acquire()
-            sending_socket_lock.acquire()
-            forward_socket = renew_socket(forward_socket, forward_address)
-            sending_socket_lock.release()
-            receiving_socket_lock.release()
+            # start thread for incoming and outcoming traffic
+            tunnel2forward_t = threading.Thread(target=self.tunnel2forward)
+            forward2tunnel_t = threading.Thread(target=self.forward2tunnel)
+            tunnel2forward_t.daemon = True
+            forward2tunnel_t.daemon = True
 
-            forward_socket.sendall(data)
+            # create thread lock semaphore for changes on forward socket
+            self.sending_socket_lock = threading.Lock()
+            self.receiving_socket_lock = threading.Lock()
 
+            tunnel2forward_t.start()
+            forward2tunnel_t.start()
+            
+            tunnel2forward_t.join()
+            forward2tunnel_t.join()
 
-def forward2tunnel() :
-    global forward_socket
+        except KeyboardInterrupt :
+            # close sockets after SIGINT
+            print('\n[*] Closing connections')
+            self.tunnel_socket.shutdown(socket.SHUT_RDWR)
+            self.tunnel_socket.close()
+            self.forward_socket.shutdown(socket.SHUT_RDWR)
+            self.forward_socket.close()
+            print('\n[*] Stopped correctly')
+            sys.exit(0)
 
-    while True :
-        receiving_socket_lock.acquire()
-        data = forward_socket.recv(BUFFER_SIZE)
-        receiving_socket_lock.release()
-
-        if not data :
-            # locking other threads
-            receiving_socket_lock.acquire()
-            sending_socket_lock.acquire()
-            forward_socket = renew_socket(forward_socket, forward_address)
-            sending_socket_lock.release()
-            receiving_socket_lock.release()
-            continue
-
-        try :
-            tunnel_socket.sendall(data)
         except Exception as e :
-            raise Exception("Tunnel has dropped, this shouldn't happen, restart RPPF.")
+            print('[!] An exception occurred')
+            print(e)
+            print('[!] Trying to close sockets')
+            self.tunnel_socket.shutdown(socket.SHUT_RDWR)
+            self.tunnel_socket.close()
+            self.forward_socket.shutdown(socket.SHUT_RDWR)
+            self.forward_socket.close()
+            sys.exit(1)
 
 
-parser = argparse.ArgumentParser(
-        formatter_class=argparse.RawTextHelpFormatter, 
-        description=
-        u'''
-----------------------------------------
- Reverse Python Port Forwarder (Remote)
-----------------------------------------
-Welcome to the RPPF, a simple port forwarder written in python.
-This code should be running on the remote (attacked) machine.
-A tunnel will be created to the thost:tport address using a reverse 
-connection logic, to bypass firewall. The data coming from the tunnel
-will then be sent over a new connection to the forward address.
-The tunnel address should be your RPPF local tunnel address.
-Example : ./remote_portfwd.py localhost:4444 google.com:80
-----------------------------------------
-* Only tcp protocol supported *
+    def establish_connection(self, address):
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-     __                          __
-    |==|                        |==|
-    |= |                        |= |
-    |^*|  ----\u2620----\u2620----\u2620----   |^*|
-    |__|                        |__|
-        ''')
+        while True :
+            try :
+                client_socket.connect(address)
+                break
+            except :
+                time.sleep(1)
+
+        return client_socket
 
 
-
-parser.add_argument("tunnel_address", metavar="thost:tport", type=str, help="Your local address to be contacted")
-parser.add_argument("forward_address", metavar="fhost:fport", type=str, help="The remote address to forward to")
-
-args = parser.parse_args()
-
-tunnel_hostname, tunnel_port = args.tunnel_address.split(':')
-tunnel_address = (tunnel_hostname, int(tunnel_port))
-forward_hostname, forward_port = args.forward_address.split(':')
-forward_address = (forward_hostname, int(forward_port))
+    def renew_socket(self, old_socket, address) :
+        old_socket.shutdown(socket.SHUT_RDWR)
+        old_socket.close()
+        return self.establish_connection(address)
 
 
-try :
-    print("creating tunnel to " + str(tunnel_address))
-    tunnel_socket = establish_connection(tunnel_address)
-    print("tunnel created")
+    # tunnel connection should be always alive and so should never launch error
+    # if tunnel connection drop you should restart the program
+    def tunnel2forward(self) :
+        while True :
+            data = self.tunnel_socket.recv(self.BUFFER_SIZE)
+            if not data :
+                raise Exception("Tunnel has dropped, this shouldn't happen, restart RPPF.")
 
-    print("opening forward connection to " + str(forward_address))
-    forward_socket = establish_connection(forward_address)
-    print("connection created")
-    print("--------------------------------------------")
-    print("Ready to transfer data")
-    
+            try :
+                self.sending_socket_lock.acquire()
+                self.forward_socket.sendall(data)
+                self.sending_socket_lock.release()
 
-    # start thread for incoming and outcoming traffic
-    tunnel2forward_t = threading.Thread(target=tunnel2forward)
-    forward2tunnel_t = threading.Thread(target=forward2tunnel)
-    tunnel2forward_t.daemon = True
-    forward2tunnel_t.daemon = True
+            except Exception :
+                self.sending_socket_lock.release()
 
-    # create thread lock semaphore for changes on forward socket
-    sending_socket_lock = threading.Lock()
-    receiving_socket_lock = threading.Lock()
+                # locking other threads
+                self.receiving_socket_lock.acquire()
+                self.sending_socket_lock.acquire()
+                self.forward_socket = self.renew_socket(self.forward_socket, forward_address)
+                self.sending_socket_lock.release()
+                self.receiving_socket_lock.release()
 
-    tunnel2forward_t.start()
-    forward2tunnel_t.start()
-    
-    tunnel2forward_t.join()
-    forward2tunnel_t.join()
+                self.forward_socket.sendall(data)
 
-except KeyboardInterrupt :
-    # close sockets after SIGINT
-    print('\nClosing connections')
-    tunnel_socket.shutdown(socket.SHUT_RDWR)
-    tunnel_socket.close()
-    forward_socket.shutdown(socket.SHUT_RDWR)
-    forward_socket.close()
-    print('\nStopped correctly')
-    sys.exit(0)
 
-except Exception as e :
-    print('An exception occurred')
-    print(e)
-    print('Trying to close sockets')
-    tunnel_socket.shutdown(socket.SHUT_RDWR)
-    tunnel_socket.close()
-    forward_socket.shutdown(socket.SHUT_RDWR)
-    forward_socket.close()
-    sys.exit(1)
+    def forward2tunnel(self) :
+        while True :
+            self.receiving_socket_lock.acquire()
+            data = self.forward_socket.recv(self.BUFFER_SIZE)
+            self.receiving_socket_lock.release()
+
+            if not data :
+                # locking other threads
+                self.receiving_socket_lock.acquire()
+                self.sending_socket_lock.acquire()
+                self.forward_socket = self.renew_socket(self.forward_socket, forward_address)
+                self.sending_socket_lock.release()
+                self.receiving_socket_lock.release()
+                continue
+
+            try :
+                self.tunnel_socket.sendall(data)
+            except Exception as e:
+                raise Exception("Tunnel has dropped, this shouldn't happen, restart RPPF.")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+            formatter_class=argparse.RawTextHelpFormatter, 
+            description="Raw TCP port forwarding")
+
+    parser.add_argument("port",
+            type=int,
+            help="Your local port to be contacted")
+
+    parser.add_argument("forward_address",
+            metavar="fhost:fport",
+            type=str,
+            help="The remote address to forward to")
+
+    args = parser.parse_args()
+    tunnel_address = ("localhost", args.port)
+    forward_hostname, forward_port = args.forward_address.split(':')
+    forward_address = (forward_hostname, int(forward_port))
+    Forwarder(forward_address, tunnel_address)
