@@ -9,7 +9,7 @@ import threading
 import argparse
 
 class Listener:
-    BUFFER_SIZE = 0x400
+    BUFFER_SIZE = 4096
 
     def __init__(self, tunnel_address, rppf_address):
         try :
@@ -77,6 +77,7 @@ class Listener:
                 raise Exception("Tunnel has dropped, this shouldn't happen, restart RPPF.")
             
             try :
+                print("Send {} bytes to RPPF".format(len(data)))
                 self.rppf_conn_lock.acquire()
                 self.rppf_conn.sendall(data)
                 self.rppf_conn_lock.release()
@@ -91,6 +92,7 @@ class Listener:
                 if not data :
                     break
                 try :
+                    print("Send {} bytes to tunnel".format(len(data)))
                     self.tunnel_conn.sendall(data)
                 except Exception :
                     raise Exception("Tunnel has dropped, this shouldn't happen, restart RPPF.")
@@ -107,13 +109,14 @@ if __name__ == "__main__":
             formatter_class=argparse.RawTextHelpFormatter, 
             description="Raw TCP port forwarding listener")
 
-    parser.add_argument("tunnel_port",
-            type=int,
-            help="The port on which the remote tunnel is connected")
+    parser.add_argument("tunnel",
+            metavar="taddr:tport",
+            type=str,
+            help="The address and port on which the remote tunnel is connected")
 
     parser.add_argument("serve_port",
             type=int,
             help="The port on which you wish to serve the data received")
 
     args = parser.parse_args()
-    Listener(("localhost", args.tunnel_port), ("localhost", args.serve_port))
+    Listener((args.tunnel.split(":")[0], int(args.tunnel.split(":")[1])), ("localhost", args.serve_port))
